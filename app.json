@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Daily Noise",
+    "slug": "daily-noise",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0A0A"
+    },
+    "backgroundColor": "#0A0A0A",
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0A"
+      },
+      "package": "com.dailynoise.app",
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "SCHEDULE_EXACT_ALARM",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#CC0000"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "092057f5-9251-40c2-ba5e-8ee06b279545"
+      }
+    }
+  }
+}
