@@ -14,6 +14,17 @@
       "supportsTablet": false
     },
     "android": {
+  "jsEngine": "hermes",
+  "adaptiveIcon": {
+    "backgroundColor": "#0A0A0A"
+  },
+  "package": "com.dailynoise.app",
+  "permissions": [
+    "RECEIVE_BOOT_COMPLETED",
+    "SCHEDULE_EXACT_ALARM",
+    "POST_NOTIFICATIONS"
+  ]
+}
       "adaptiveIcon": {
         "backgroundColor": "#0A0A0A"
       },
