@@ -1,13 +1,13 @@
-// src/screens/OnboardingScreen.js
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, SafeAreaView, Dimensions,
-  TextInput, ActivityIndicator,
+  TextInput, ActivityIndicator, Image,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { saveFavorites } from '../utils/storage';
 import { scheduleDailyNotification } from '../utils/notifications';
-import { useSpotifyAuth, saveToken, getToken, searchArtists } from '../utils/spotifyAuth';
+import { searchArtists } from '../utils/spotifyAuth';
 import { colors, typography, spacing } from '../theme';
 
 const { width } = Dimensions.get('window');
@@ -18,49 +18,21 @@ export default function OnboardingScreen({ navigation }) {
   const [selected, setSelected] = useState([]);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
-  const [token, setToken] = useState(null);
   const [searching, setSearching] = useState(false);
-  const [authDone, setAuthDone] = useState(false);
-
-  const { request, response, promptAsync } = useSpotifyAuth();
 
   useEffect(() => {
-    checkToken();
-  }, []);
-
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const accessToken = response.params.access_token ||
-        response.authentication?.accessToken;
-      if (accessToken) {
-        saveToken(accessToken);
-        setToken(accessToken);
-        setAuthDone(true);
-      }
-    }
-  }, [response]);
-
-  useEffect(() => {
-    if (token && query.length >= 2) {
+    if (query.length >= 2) {
       const timeout = setTimeout(() => doSearch(), 500);
       return () => clearTimeout(timeout);
     } else {
       setResults([]);
     }
-  }, [query, token]);
-
-  const checkToken = async () => {
-    const saved = await getToken();
-    if (saved) {
-      setToken(saved);
-      setAuthDone(true);
-    }
-  };
+  }, [query]);
 
   const doSearch = async () => {
     setSearching(true);
     try {
-      const artists = await searchArtists(token, query);
+      const artists = await searchArtists(query);
       setResults(artists);
     } catch (e) {
       console.error(e);
@@ -88,33 +60,9 @@ export default function OnboardingScreen({ navigation }) {
 
   const canContinue = selected.length >= MIN_SELECTION;
 
-  if (!authDone) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.authContainer}>
-          <Text style={styles.logo}>DAILY</Text>
-          <Text style={styles.logoAccent}>NOISE</Text>
-          <View style={styles.divider} />
-          <Text style={styles.authText}>
-            Conecta tu Spotify para descubrir música real
-          </Text>
-          <TouchableOpacity
-            style={styles.spotifyBtn}
-            onPress={() => promptAsync()}
-            disabled={!request}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.spotifyBtnText}>▶  CONECTAR SPOTIFY</Text>
-          </TouchableOpacity>
-          <Text style={styles.footer}>no es mainstream. es tuyo.</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Text style={styles.logo}>DAILY</Text>
           <Text style={styles.logoAccent}>NOISE</Text>
@@ -146,16 +94,26 @@ export default function OnboardingScreen({ navigation }) {
                   onPress={() => toggle(artist)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.resultEmoji}>🎸</Text>
+                  {artist.image ? (
+                    <Image source={{ uri: artist.image }} style={styles.artistImage} />
+                  ) : (
+                    <View style={styles.artistImagePlaceholder}>
+                      <Text style={styles.artistEmoji}>🎸</Text>
+                    </View>
+                  )}
                   <View style={styles.resultInfo}>
-                    <Text style={[styles.resultName, isSelected && styles.resultNameSelected]}>
+                    <Text style={[styles.resultName, isSelected && styles.resultNameSelected]} numberOfLines={1}>
                       {artist.name.toUpperCase()}
                     </Text>
-                    <Text style={styles.resultGenre}>
+                    <Text style={styles.resultGenre} numberOfLines={1}>
                       {artist.genre.join(', ')}
                     </Text>
                   </View>
-                  {isSelected && <Text style={styles.checkmark}>✕</Text>}
+                  {isSelected && (
+                    <View style={styles.checkmark}>
+                      <Text style={styles.checkmarkText}>✕</Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -202,21 +160,15 @@ export default function OnboardingScreen({ navigation }) {
   );
 }
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   container: { paddingHorizontal: spacing.md, paddingTop: spacing.xl, paddingBottom: spacing.xxxl },
-  authContainer: { flex: 1, paddingHorizontal: spacing.md, justifyContent: 'center', gap: spacing.md },
   header: { marginBottom: spacing.xl },
   logo: { ...typography.display, fontSize: 52, color: colors.textPrimary, lineHeight: 52 },
   logoAccent: { ...typography.display, fontSize: 52, color: colors.accent, lineHeight: 52, marginBottom: spacing.md },
   divider: { width: 48, height: 2, backgroundColor: colors.accent, marginBottom: spacing.lg },
   subtitle: { ...typography.label, fontSize: 13, color: colors.textSecondary, marginBottom: spacing.xs },
   hint: { ...typography.mono, fontSize: 11, color: colors.textMuted },
-  authText: { ...typography.body, fontSize: 14, color: colors.textSecondary, marginBottom: spacing.lg },
-  spotifyBtn: { borderWidth: 2, borderColor: colors.accent, paddingVertical: spacing.md, alignItems: 'center' },
-  spotifyBtnText: { ...typography.label, fontSize: 13, color: colors.accent, letterSpacing: 3 },
   searchContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
   searchInput: {
     flex: 1, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bgCard,
@@ -230,12 +182,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgCard, padding: spacing.sm, marginBottom: spacing.xs, gap: spacing.sm,
   },
   resultItemSelected: { borderColor: colors.accent, backgroundColor: colors.bgElevated },
-  resultEmoji: { fontSize: 20 },
+  artistImage: { width: 44, height: 44 },
+  artistImagePlaceholder: { width: 44, height: 44, backgroundColor: colors.bgElevated, alignItems: 'center', justifyContent: 'center' },
+  artistEmoji: { fontSize: 20 },
   resultInfo: { flex: 1 },
   resultName: { ...typography.label, fontSize: 11, color: colors.textSecondary },
   resultNameSelected: { color: colors.textPrimary },
   resultGenre: { ...typography.mono, fontSize: 10, color: colors.textMuted, marginTop: 2 },
-  checkmark: { color: colors.accent, fontSize: 12, fontWeight: '900' },
+  checkmark: { width: 20, height: 20, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  checkmarkText: { color: colors.white, fontSize: 9, fontWeight: '900' },
   selectedSection: { marginBottom: spacing.md },
   selectedLabel: { ...typography.mono, fontSize: 10, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.sm, letterSpacing: 2 },
   selectedItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: colors.accentDim, padding: spacing.sm, marginBottom: spacing.xs },
