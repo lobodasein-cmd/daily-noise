@@ -1,6 +1,3 @@
-// App.js — Entry point de Daily Noise
-// Gestiona navegación y decide si mostrar onboarding o home
-
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -8,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 
 import OnboardingScreen from './src/screens/OnboardingScreen';
+import SwipeScreen from './src/screens/SwipeScreen';
 import HomeScreen from './src/screens/HomeScreen';
 
 const Stack = createNativeStackNavigator();
@@ -42,6 +40,7 @@ export default function App() {
         }}
       >
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+        <Stack.Screen name="Swipe" component={SwipeScreen} />
         <Stack.Screen name="Home" component={HomeScreen} />
       </Stack.Navigator>
     </NavigationContainer>

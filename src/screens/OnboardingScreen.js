@@ -55,7 +55,7 @@ export default function OnboardingScreen({ navigation }) {
     await saveFavorites(selected.map(a => a.id));
     await AsyncStorage.setItem('spotify_seed_artists', JSON.stringify(selected));
     await scheduleDailyNotification(10, 0);
-    navigation.replace('Home');
+    navigation.replace('Swipe', { seedArtists: selected });
   };
 
   const canContinue = selected.length >= MIN_SELECTION;
