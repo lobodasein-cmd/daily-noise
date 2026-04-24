@@ -1,12 +1,12 @@
-// src/screens/HomeScreen.js
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   SafeAreaView, Linking, Animated, Dimensions,
   ScrollView, ActivityIndicator,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFavorites, getLiked, getDisliked, saveLike, saveDislike, saveCurrentRecommendation, getCurrentRecommendation } from '../utils/storage';
-import { getRecommendationForToday } from '../data/artists';
+import { getAIRecommendation } from '../utils/spotifyAuth';
 import { colors, typography, spacing, shadows } from '../theme';
 
 const { width } = Dimensions.get('window');
@@ -17,33 +17,75 @@ export default function HomeScreen() {
   const [rec, setRec] = useState(null);
   const [reaction, setReaction] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [dayCount, setDayCount] = useState(1);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const glitchAnim = useRef(new Animated.Value(0)).current;
 
   const now = new Date();
   const dateStr = `${DAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`;
 
-  useEffect(() => { loadRecommendation(); }, []);
+  useEffect(() => {
+    loadRecommendation();
+    loadDayCount();
+  }, []);
+
+  const loadDayCount = async () => {
+    try {
+      const firstOpen = await AsyncStorage.getItem('first_open_date');
+      if (!firstOpen) {
+        await AsyncStorage.setItem('first_open_date', new Date().toDateString());
+        setDayCount(1);
+      } else {
+        const first = new Date(firstOpen);
+        const today = new Date();
+        const diff = Math.floor((today - first) / (1000 * 60 * 60 * 24)) + 1;
+        setDayCount(diff);
+      }
+    } catch (e) {
+      setDayCount(1);
+    }
+  };
 
   const loadRecommendation = async () => {
     setLoading(true);
     try {
       let today = await getCurrentRecommendation();
+
       if (!today) {
         const favs = await getFavorites();
         const liked = await getLiked();
         const disliked = await getDisliked();
-        today = getRecommendationForToday(favs, liked, disliked);
-        await saveCurrentRecommendation(today);
+
+        const seedArtists = await AsyncStorage.getItem('spotify_seed_artists');
+        const seedParsed = seedArtists ? JSON.parse(seedArtists) : [];
+        const likedNames = seedParsed.filter(a => favs.includes(a.id)).map(a => a.name);
+        const swipeHistory = await AsyncStorage.getItem('swipe_history');
+        const swipeParsed = swipeHistory ? JSON.parse(swipeHistory) : [];
+
+        today = await getAIRecommendation(
+          likedNames.length > 0 ? likedNames : ['Radiohead', 'Pixies'],
+          [],
+          swipeParsed
+        );
+
+        if (today) {
+          today.id = today.id || today.artist + '-' + Date.now();
+          await saveCurrentRecommendation(today);
+        }
       }
-      const liked = await getLiked();
-      const disliked = await getDisliked();
-      if (liked.includes(today.id)) setReaction('like');
-      else if (disliked.includes(today.id)) setReaction('dislike');
-      setRec(today);
-      animateIn();
+
+      if (today) {
+        const liked = await getLiked();
+        const disliked = await getDisliked();
+        if (liked.includes(today.id)) setReaction('like');
+        else if (disliked.includes(today.id)) setReaction('dislike');
+        setRec(today);
+        animateIn();
+        glitchEffect();
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -58,6 +100,15 @@ export default function HomeScreen() {
     ]).start();
   };
 
+  const glitchEffect = () => {
+    Animated.sequence([
+      Animated.timing(glitchAnim, { toValue: 3, duration: 50, useNativeDriver: true }),
+      Animated.timing(glitchAnim, { toValue: -3, duration: 50, useNativeDriver: true }),
+      Animated.timing(glitchAnim, { toValue: 2, duration: 50, useNativeDriver: true }),
+      Animated.timing(glitchAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
+    ]).start();
+  };
+
   const pulseCTA = () => {
     Animated.sequence([
       Animated.timing(pulseAnim, { toValue: 0.95, duration: 100, useNativeDriver: true }),
@@ -69,12 +120,20 @@ export default function HomeScreen() {
     if (!rec || reaction) return;
     await saveLike(rec.id);
     setReaction('like');
+    const swipeHistory = await AsyncStorage.getItem('swipe_history');
+    const swipeParsed = swipeHistory ? JSON.parse(swipeHistory) : [];
+    swipeParsed.push(rec.artist);
+    await AsyncStorage.setItem('swipe_history', JSON.stringify(swipeParsed));
   };
 
   const handleDislike = async () => {
     if (!rec || reaction) return;
     await saveDislike(rec.id);
     setReaction('dislike');
+    const swipeHistory = await AsyncStorage.getItem('swipe_history');
+    const swipeParsed = swipeHistory ? JSON.parse(swipeHistory) : [];
+    swipeParsed.push(rec.artist);
+    await AsyncStorage.setItem('swipe_history', JSON.stringify(swipeParsed));
   };
 
   const handleListen = (platform) => {
@@ -88,7 +147,8 @@ export default function HomeScreen() {
       <SafeAreaView style={styles.safe}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator color={colors.accent} size="large" />
-          <Text style={styles.loadingText}>CARGANDO SEÑAL...</Text>
+          <Text style={styles.loadingText}>ANALIZANDO TU PERFIL...</Text>
+          <Text style={styles.loadingSubtext}>la ia está trabajando</Text>
         </View>
       </SafeAreaView>
     );
@@ -106,9 +166,18 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.headerDivider} />
+
+        <View style={styles.dayCountRow}>
+          <Text style={styles.dayCountText}>DAY {String(dayCount).padStart(3, '0')}</Text>
+          <Text style={styles.aiTag}>✦ IA PERSONALIZADA</Text>
+        </View>
+
         <Text style={styles.sectionLabel}>── ARTISTA DEL DÍA ──</Text>
 
-        <Animated.View style={[styles.artistCard, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+        <Animated.View style={[
+          styles.artistCard,
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }, { translateX: glitchAnim }] }
+        ]}>
           <View style={styles.cardHeader}>
             <Text style={styles.issueText}>N°{now.getDate().toString().padStart(3, '0')}</Text>
             <Text style={styles.genreTag}>{rec?.genre?.toUpperCase()}</Text>
@@ -120,6 +189,12 @@ export default function HomeScreen() {
             <View style={styles.accentLine} />
           </View>
           <Text style={styles.vibeLine}>{rec?.vibe}</Text>
+          {rec?.reason && (
+            <View style={styles.reasonRow}>
+              <Text style={styles.reasonLabel}>✦ POR QUÉ</Text>
+              <Text style={styles.reasonText}>{rec.reason}</Text>
+            </View>
+          )}
           <View style={styles.songRow}>
             <Text style={styles.songLabel}>TRACK</Text>
             <Text style={styles.songName}>{rec?.song}</Text>
@@ -165,7 +240,7 @@ export default function HomeScreen() {
           </View>
           {reaction && (
             <Text style={styles.reactionConfirm}>
-              {reaction === 'like' ? 'registrado. buen oído.' : 'registrado. mañana algo diferente.'}
+              {reaction === 'like' ? 'registrado. la ia aprende.' : 'registrado. mañana algo diferente.'}
             </Text>
           )}
         </Animated.View>
@@ -185,13 +260,17 @@ const styles = StyleSheet.create({
   container: { paddingHorizontal: spacing.md, paddingTop: spacing.lg, paddingBottom: spacing.xxxl },
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
   loadingText: { ...typography.label, fontSize: 11, color: colors.textMuted, letterSpacing: 4 },
+  loadingSubtext: { ...typography.mono, fontSize: 10, color: colors.accentDim, fontStyle: 'italic' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: spacing.md },
   logo: { ...typography.display, fontSize: 28, color: colors.textPrimary },
   logoAccent: { color: colors.accent },
   dateBlock: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   dateText: { ...typography.mono, fontSize: 11, color: colors.textSecondary },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accent },
-  headerDivider: { height: 1, backgroundColor: colors.border, marginBottom: spacing.lg },
+  headerDivider: { height: 1, backgroundColor: colors.border, marginBottom: spacing.md },
+  dayCountRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
+  dayCountText: { ...typography.display, fontSize: 32, color: colors.accent, letterSpacing: -1 },
+  aiTag: { ...typography.mono, fontSize: 10, color: colors.textMuted, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.sm, paddingVertical: 2 },
   sectionLabel: { ...typography.mono, fontSize: 10, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.md, letterSpacing: 2 },
   artistCard: { backgroundColor: colors.bgCard, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.md, ...shadows.card },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
@@ -200,7 +279,10 @@ const styles = StyleSheet.create({
   artistNameContainer: { marginBottom: spacing.md },
   artistName: { ...typography.display, fontSize: Math.min(52, width * 0.12), color: colors.textPrimary, lineHeight: Math.min(52, width * 0.12) * 1.05, letterSpacing: -2 },
   accentLine: { width: 32, height: 3, backgroundColor: colors.accent, marginTop: spacing.sm },
-  vibeLine: { ...typography.mono, fontSize: 12, color: colors.textSecondary, fontStyle: 'italic', marginBottom: spacing.lg },
+  vibeLine: { ...typography.mono, fontSize: 12, color: colors.textSecondary, fontStyle: 'italic', marginBottom: spacing.md },
+  reasonRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, marginBottom: spacing.md, gap: spacing.xs },
+  reasonLabel: { ...typography.label, fontSize: 9, color: colors.accent, letterSpacing: 2 },
+  reasonText: { ...typography.mono, fontSize: 11, color: colors.textSecondary, fontStyle: 'italic' },
   songRow: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, gap: spacing.md },
   songLabel: { ...typography.label, fontSize: 9, color: colors.textMuted, letterSpacing: 3 },
   songName: { ...typography.body, fontSize: 14, color: colors.textPrimary, fontStyle: 'italic', flex: 1 },

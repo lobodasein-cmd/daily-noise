@@ -14,16 +14,33 @@ export async function searchArtists(query) {
   }
 }
 
-export async function getRecommendations(seedArtistNames) {
-  if (!seedArtistNames || seedArtistNames.length === 0) return null;
+export async function getAIRecommendation(likedArtists, dislikedArtists, swipeHistory) {
   try {
-    const artist = encodeURIComponent(seedArtistNames[0]);
-    const res = await fetch(SERVER_URL + '/similar?artist=' + artist);
+    const res = await fetch(SERVER_URL + '/recommend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        likedArtists: likedArtists || [],
+        dislikedArtists: dislikedArtists || [],
+        swipeHistory: swipeHistory || [],
+      }),
+    });
     const data = await res.json();
     return data;
   } catch (e) {
-    console.error('Recommendations error:', e);
+    console.error('AI recommendation error:', e);
     return null;
+  }
+}
+
+export async function getSimilarArtists(artistName) {
+  try {
+    const res = await fetch(SERVER_URL + '/similar?artist=' + encodeURIComponent(artistName));
+    const data = await res.json();
+    return data;
+  } catch (e) {
+    console.error('Similar artists error:', e);
+    return [];
   }
 }
 
