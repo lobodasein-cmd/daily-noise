@@ -5,7 +5,7 @@ import {
   ScrollView, ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getFavorites, getLiked, getDisliked, saveLike, saveDislike, saveCurrentRecommendation, getCurrentRecommendation } from '../utils/storage';
+import { getFavorites, getLiked, getDisliked, saveLike, saveDislike, saveCurrentRecommendation, getCurrentRecommendation, clearAll } from '../utils/storage';
 import { getAIRecommendation } from '../utils/spotifyAuth';
 import { colors, typography, spacing, shadows } from '../theme';
 
@@ -13,7 +13,7 @@ const { width } = Dimensions.get('window');
 const DAYS = ['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'];
 const MONTHS = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
 
-export default function HomeScreen() {
+export default function HomeScreen({ navigation }) {
   const [rec, setRec] = useState(null);
   const [reaction, setReaction] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -56,17 +56,17 @@ export default function HomeScreen() {
 
       if (!today) {
         const favs = await getFavorites();
-        const liked = await getLiked();
-        const disliked = await getDisliked();
-
         const seedArtists = await AsyncStorage.getItem('spotify_seed_artists');
         const seedParsed = seedArtists ? JSON.parse(seedArtists) : [];
         const likedNames = seedParsed.filter(a => favs.includes(a.id)).map(a => a.name);
         const swipeHistory = await AsyncStorage.getItem('swipe_history');
         const swipeParsed = swipeHistory ? JSON.parse(swipeHistory) : [];
+        const extraFavs = await AsyncStorage.getItem('extra_favorites');
+        const extraParsed = extraFavs ? JSON.parse(extraFavs) : [];
+        const allLiked = [...new Set([...likedNames, ...extraParsed])];
 
         today = await getAIRecommendation(
-          likedNames.length > 0 ? likedNames : ['Radiohead', 'Pixies'],
+          allLiked.length > 0 ? allLiked : ['Radiohead', 'Pixies'],
           [],
           swipeParsed
         );
@@ -142,6 +142,15 @@ export default function HomeScreen() {
     Linking.openURL(url).catch(() => Linking.openURL(rec.youtubeUrl));
   };
 
+  const handleReset = async () => {
+    await clearAll();
+    await AsyncStorage.removeItem('spotify_seed_artists');
+    await AsyncStorage.removeItem('swipe_history');
+    await AsyncStorage.removeItem('extra_favorites');
+    await AsyncStorage.removeItem('first_open_date');
+    navigation.replace('Onboarding');
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safe}>
@@ -157,6 +166,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+
         <View style={styles.header}>
           <Text style={styles.logo}>DAILY<Text style={styles.logoAccent}> NOISE</Text></Text>
           <View style={styles.dateBlock}>
@@ -249,7 +259,11 @@ export default function HomeScreen() {
           <View style={styles.footerDivider} />
           <Text style={styles.footerText}>VUELVE MAÑANA • NUEVA SEÑAL CADA DÍA</Text>
           <Text style={styles.footerMotto}>esto no es mainstream</Text>
+          <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+            <Text style={styles.resetText}>reiniciar app</Text>
+          </TouchableOpacity>
         </View>
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -309,4 +323,6 @@ const styles = StyleSheet.create({
   footerDivider: { width: '100%', height: 1, backgroundColor: colors.border, marginBottom: spacing.sm },
   footerText: { ...typography.mono, fontSize: 9, color: colors.textMuted, letterSpacing: 2 },
   footerMotto: { ...typography.mono, fontSize: 10, color: colors.accentDim, fontStyle: 'italic' },
+  resetButton: { marginTop: spacing.md, paddingVertical: spacing.sm },
+  resetText: { ...typography.mono, fontSize: 10, color: colors.textMuted, textDecorationLine: 'underline' },
 });
