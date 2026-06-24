@@ -5,8 +5,8 @@ import {
   ScrollView, ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getFavorites, getLiked, getDisliked, saveLike, saveDislike, saveCurrentRecommendation, getCurrentRecommendation, clearAll } from '../utils/storage';
-import { getAIRecommendation } from '../utils/spotifyAuth';
+import { clearAll } from '../utils/storage';
+import { useRecommendation } from '../hooks/useRecommendation';
 import { colors, typography, spacing, shadows } from '../theme';
 
 const { width } = Dimensions.get('window');
@@ -14,9 +14,7 @@ const DAYS = ['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'];
 const MONTHS = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
 
 export default function HomeScreen({ navigation }) {
-  const [rec, setRec] = useState(null);
-  const [reaction, setReaction] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { rec, reaction, loading, error, like, dislike, retry } = useRecommendation();
   const [dayCount, setDayCount] = useState(1);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -28,9 +26,16 @@ export default function HomeScreen({ navigation }) {
   const dateStr = `${DAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`;
 
   useEffect(() => {
-    loadRecommendation();
     loadDayCount();
   }, []);
+
+  // Dispara la animación de entrada cada vez que llega una recomendación nueva
+  useEffect(() => {
+    if (rec) {
+      animateIn();
+      glitchEffect();
+    }
+  }, [rec]);
 
   const loadDayCount = async () => {
     try {
@@ -46,50 +51,6 @@ export default function HomeScreen({ navigation }) {
       }
     } catch (e) {
       setDayCount(1);
-    }
-  };
-
-  const loadRecommendation = async () => {
-    setLoading(true);
-    try {
-      let today = await getCurrentRecommendation();
-
-      if (!today) {
-        const favs = await getFavorites();
-        const seedArtists = await AsyncStorage.getItem('spotify_seed_artists');
-        const seedParsed = seedArtists ? JSON.parse(seedArtists) : [];
-        const likedNames = seedParsed.filter(a => favs.includes(a.id)).map(a => a.name);
-        const swipeHistory = await AsyncStorage.getItem('swipe_history');
-        const swipeParsed = swipeHistory ? JSON.parse(swipeHistory) : [];
-        const extraFavs = await AsyncStorage.getItem('extra_favorites');
-        const extraParsed = extraFavs ? JSON.parse(extraFavs) : [];
-        const allLiked = [...new Set([...likedNames, ...extraParsed])];
-
-        today = await getAIRecommendation(
-          allLiked.length > 0 ? allLiked : ['Radiohead', 'Pixies'],
-          [],
-          swipeParsed
-        );
-
-        if (today) {
-          today.id = today.id || today.artist + '-' + Date.now();
-          await saveCurrentRecommendation(today);
-        }
-      }
-
-      if (today) {
-        const liked = await getLiked();
-        const disliked = await getDisliked();
-        if (liked.includes(today.id)) setReaction('like');
-        else if (disliked.includes(today.id)) setReaction('dislike');
-        setRec(today);
-        animateIn();
-        glitchEffect();
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -116,26 +77,6 @@ export default function HomeScreen({ navigation }) {
     ]).start();
   };
 
-  const handleLike = async () => {
-    if (!rec || reaction) return;
-    await saveLike(rec.id);
-    setReaction('like');
-    const swipeHistory = await AsyncStorage.getItem('swipe_history');
-    const swipeParsed = swipeHistory ? JSON.parse(swipeHistory) : [];
-    swipeParsed.push(rec.artist);
-    await AsyncStorage.setItem('swipe_history', JSON.stringify(swipeParsed));
-  };
-
-  const handleDislike = async () => {
-    if (!rec || reaction) return;
-    await saveDislike(rec.id);
-    setReaction('dislike');
-    const swipeHistory = await AsyncStorage.getItem('swipe_history');
-    const swipeParsed = swipeHistory ? JSON.parse(swipeHistory) : [];
-    swipeParsed.push(rec.artist);
-    await AsyncStorage.setItem('swipe_history', JSON.stringify(swipeParsed));
-  };
-
   const handleListen = (platform) => {
     pulseCTA();
     const url = platform === 'spotify' ? rec.spotifyUrl : rec.youtubeUrl;
@@ -158,6 +99,20 @@ export default function HomeScreen({ navigation }) {
           <ActivityIndicator color={colors.accent} size="large" />
           <Text style={styles.loadingText}>ANALIZANDO TU PERFIL...</Text>
           <Text style={styles.loadingSubtext}>la ia está trabajando</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.errorTitle}>ALGO SE CORTÓ</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={retry} activeOpacity={0.8}>
+            <Text style={styles.retryButtonText}>REINTENTAR</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -232,7 +187,7 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.reactionRow}>
             <TouchableOpacity
               style={[styles.reactionBtn, reaction === 'like' && styles.reactionBtnLikeActive, reaction && reaction !== 'like' && styles.reactionBtnDimmed]}
-              onPress={handleLike} disabled={!!reaction} activeOpacity={0.7}
+              onPress={like} disabled={!!reaction} activeOpacity={0.7}
             >
               <Text style={styles.reactionIcon}>♥</Text>
               <Text style={[styles.reactionText, reaction === 'like' && styles.reactionTextActive]}>ME LLEGA</Text>
@@ -242,7 +197,7 @@ export default function HomeScreen({ navigation }) {
             </View>
             <TouchableOpacity
               style={[styles.reactionBtn, reaction === 'dislike' && styles.reactionBtnDislikeActive, reaction && reaction !== 'dislike' && styles.reactionBtnDimmed]}
-              onPress={handleDislike} disabled={!!reaction} activeOpacity={0.7}
+              onPress={dislike} disabled={!!reaction} activeOpacity={0.7}
             >
               <Text style={styles.reactionIcon}>✕</Text>
               <Text style={[styles.reactionText, reaction === 'dislike' && styles.reactionTextDislikeActive]}>NO ES LO MÍO</Text>
@@ -275,6 +230,10 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
   loadingText: { ...typography.label, fontSize: 11, color: colors.textMuted, letterSpacing: 4 },
   loadingSubtext: { ...typography.mono, fontSize: 10, color: colors.accentDim, fontStyle: 'italic' },
+  errorTitle: { ...typography.display, fontSize: 20, color: colors.textPrimary, letterSpacing: 1 },
+  errorText: { ...typography.mono, fontSize: 12, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: spacing.lg, marginTop: spacing.xs },
+  retryButton: { borderWidth: 1, borderColor: colors.accent, paddingVertical: spacing.sm, paddingHorizontal: spacing.lg, marginTop: spacing.md },
+  retryButtonText: { ...typography.label, fontSize: 11, color: colors.accent, letterSpacing: 2 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: spacing.md },
   logo: { ...typography.display, fontSize: 28, color: colors.textPrimary },
   logoAccent: { color: colors.accent },
